@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Generate UTM links for multiple marketing channels and download a campaign CSV.">
+<title>Campaign Link Builder | Hello Future Technologies</title>
+<style>
+:root{color-scheme:light;--ink:#14263b;--muted:#526479;--line:#dce4ee;--blue:#144dcc;--navy:#10233f;--surface:#fff}
+*{box-sizing:border-box}body{margin:0;background:#f2f6fb;color:var(--ink);font:16px/1.5 "Instrument Sans",system-ui,sans-serif}a{color:var(--blue)}
+header{background:var(--navy);color:white;padding:26px max(24px,calc((100vw - 1100px)/2)) 75px}header a{color:#dce9ff;font-size:.9rem;font-weight:650;text-decoration:none}h1{font-size:clamp(2.35rem,6vw,4rem);letter-spacing:-.065em;line-height:1.05;margin:34px 0 12px}header p{color:#d2def0;margin:0;max-width:560px}
+main{max-width:1148px;margin:-36px auto 0;padding:0 24px 44px;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:20px;align-items:start}
+section{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:25px;box-shadow:0 12px 36px #1832520a;min-width:0}h2{font-size:1.22rem;letter-spacing:-.02em;margin:0 0 16px}p{margin:0 0 12px}.hint,#status,footer{color:var(--muted);font-size:.88rem}label{display:block;font-weight:650;font-size:.88rem;margin:0 0 5px}
+input,textarea,button{font:inherit}input,textarea{width:100%;border:1px solid #aebdce;border-radius:8px;padding:10px 11px;color:var(--ink);background:#fff}textarea{min-height:114px;resize:vertical}input:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid #5386f0;outline-offset:2px}
+.field{margin-bottom:15px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}button{cursor:pointer;border:1px solid #afc2df;border-radius:8px;padding:9px 13px;color:#173e91;background:#f4f8ff;font-weight:650}button.primary{color:white;background:var(--blue);border-color:var(--blue)}button:disabled{opacity:.55;cursor:default}
+ol{list-style:none;padding:0;margin:12px 0}li{padding:12px 0;border-top:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}li strong{display:block}li a{font-size:.83rem;overflow-wrap:anywhere}li button{font-size:.82rem;padding:6px 9px}#status{min-height:1.4em;margin:12px 0 0}#status[data-error=true]{color:#a1272c}footer{text-align:center;padding:0 20px 26px}@media(max-width:720px){main{grid-template-columns:1fr;padding-inline:14px}section{padding:19px}.pair{grid-template-columns:1fr;gap:0}}
+</style>
+</head>
+<body>
+<header>
+<a href="https://hellofuturetechnology.com/">Hello Future Technologies</a>
+<h1>Campaign Link Builder</h1>
+<p>Create trackable UTM links for email, social media, ads, and messaging. Build several links for the same campaign in one go.</p>
+</header>
+<main>
+<section aria-labelledby="settings">
+<h2 id="settings">Campaign settings</h2>
+<form id="builder">
+<div class="field"><label for="destination">Destination URL</label><input id="destination" type="url" placeholder="https://example.com/summer-sale" required></div>
+<div class="field"><label for="campaign">Campaign name</label><input id="campaign" maxlength="150" placeholder="summer_sale" required></div>
+<div class="pair">
+<div class="field"><label for="term">Term <span class="hint">(optional)</span></label><input id="term" maxlength="150" placeholder="running shoes"></div>
+<div class="field"><label for="content">Content <span class="hint">(optional)</span></label><input id="content" maxlength="150" placeholder="banner_a"></div>
+</div>
+<div class="field"><label for="channels">Channels</label><p id="channel-help" class="hint">Enter one source and medium per line, separated by a comma. These values are case-sensitive in many analytics reports.</p><textarea id="channels" aria-describedby="channel-help" required maxlength="8000">linkedin,organic_social
+newsletter,email
+whatsapp,messaging</textarea></div>
+<div class="actions"><button class="primary" type="submit">Generate links</button><button id="example" type="button">Load example</button></div>
+</form>
+</section>
+<section aria-labelledby="results">
+<h2 id="results">Generated links</h2>
+<p id="empty" class="hint">Your campaign links will appear here.</p>
+<ol id="links"></ol>
+<div class="actions"><button id="download" disabled>Download CSV</button></div>
+<p id="status" role="status" aria-live="polite"></p>
+</section>
+</main>
+<footer>Runs in your browser. Campaign inputs are never uploaded by this tool.</footer>
+<script>
+'use strict';
+const byId = (id) => document.getElementById(id);
+const form = byId('builder');
+let results = [];
+
+function createLinks(destination, campaign, channels, term, content) {
+  let url;
+  try { url = new URL(destination.trim()); }
+  catch { throw new Error('Enter a complete destination URL starting with https:// or http://.'); }
+  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) {
+    throw new Error('Use an HTTP or HTTPS URL without embedded credentials.');
+  }
+  if (!campaign.trim()) throw new Error('Enter a campaign name.');
+  const rows = channels.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  if (!rows.length || rows.length > 100) throw new Error('Enter between 1 and 100 channel rows.');
+  return rows.map((line, index) => {
+    const fields = line.split(',').map(field => field.trim());
+    if (fields.length !== 2 || fields.some(field => !field || field.length > 150)) {
+      throw new Error('Channel row ' + (index + 1) + ' needs a source and medium of 1–150 characters each.');
+    }
+    const [source, medium] = fields;
+    const link = new URL(url);
+    const params = {utm_source: source, utm_medium: medium, utm_campaign: campaign.trim(), utm_term: term.trim(), utm_content: content.trim()};
+    for (const [key, value] of Object.entries(params)) {
+      if (value) link.searchParams.set(key, value);
+      else link.searchParams.delete(key);
+    }
+    return {...params, url: link.href};
+  });
+}
+
+function csvCell(value) {
+  const safe = /^[\s\uFEFF]*[=+\-@＝＋－＠]|^[\t\r\n]/u.test(value) ? "'" + value : value;
+  return '"' + safe.replace(/"/g, '""') + '"';
+}
+function csvReport(rows) {
+  const columns = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'url'];
+  return [columns.join(','), ...rows.map(row => columns.map(key => csvCell(row[key])).join(','))].join('\r\n') + '\r\n';
+}
+function status(message, error = false) {
+  byId('status').textContent = message;
+  byId('status').dataset.error = error;
+}
+function render() {
+  byId('links').replaceChildren();
+  byId('empty').hidden = results.length > 0;
+  byId('download').disabled = results.length === 0;
+  for (const result of results) {
+    const row = document.createElement('li');
+    const info = document.createElement('div');
+    const heading = document.createElement('strong');
+    heading.textContent = result.utm_source + ' / ' + result.utm_medium;
+    const link = document.createElement('a');
+    link.href = result.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = result.url;
+    const copy = document.createElement('button');
+    copy.textContent = 'Copy';
+    copy.setAttribute('aria-label', 'Copy ' + result.utm_source + ' / ' + result.utm_medium + ' link');
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(result.url);
+        status('Link copied.');
+      } catch {
+        status('Clipboard access is unavailable. Select and copy the displayed link.', true);
+      }
+    });
+    info.append(heading, link);
+    row.append(info, copy);
+    byId('links').append(row);
+  }
+}
+form.addEventListener('submit', event => {
+  event.preventDefault();
+  try {
+    results = createLinks(...['destination', 'campaign', 'channels', 'term', 'content'].map(id => byId(id).value));
+    status(results.length + (results.length === 1 ? ' link generated.' : ' links generated.'));
+  } catch (error) {
+    results = [];
+    status(error.message, true);
+  }
+  render();
+});
+form.addEventListener('input', () => {
+  if (results.length) {
+    results = [];
+    render();
+    status('Settings changed. Generate links again.');
+  }
+});
+byId('example').addEventListener('click', () => {
+  byId('destination').value = 'https://example.com/events?lang=en#register';
+  byId('campaign').value = 'summer_workshop';
+  byId('channels').value = 'linkedin,organic_social\nnewsletter,email\nwhatsapp,messaging';
+  byId('term').value = '';
+  byId('content').value = 'launch';
+  form.requestSubmit();
+});
+byId('download').addEventListener('click', () => {
+  const url = URL.createObjectURL(new Blob(['\uFEFF', csvReport(results)], {type: 'text/csv;charset=utf-8'}));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'campaign-links.csv';
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  status('Campaign CSV downloaded.');
+});
+</script>
+</body>
+</html>
